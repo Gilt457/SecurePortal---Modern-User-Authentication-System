@@ -1,100 +1,176 @@
-# Project Documentation
+# Project Documentation - SecurePortal
 
 ## Project Overview
-This project is a professional web application with user authentication functionality. It features a modern UI design and secure backend implementation for user registration and login.
+This project is a professional web application with comprehensive user authentication and management functionality. It features a modern UI design (including Dark Mode), secure backend implementation for user registration, login, email verification, password reset, profile management, conceptual Two-Factor Authentication (2FA), and basic Role-Based Access Control (RBAC) with an admin panel.
 
 ## Technologies Used
-- PHP 7.4+
+- PHP 7.4+ (with `php-mysql`, `php-cli`)
 - MySQL Database
 - Bootstrap 5.3.6
 - Font Awesome 6.0.0
 - HTML5/CSS3
-- JavaScript
+- JavaScript (including LocalStorage for Dark Mode persistence)
 
 ## Project Structure
 The project follows a clean file organization:
 
-1. **index.php** - The main landing page with login functionality
-2. **signup.php** - User registration page 
-3. **home.php** - Dashboard that users see after successful login
-4. **connect.php** - Database connection configuration
-5. **logout.php** - Handles user logout functionality
-6. **check_table.php** - Utility file to check database table structure
+1.  **index.php** - Main landing page with login functionality. Handles 2FA redirection.
+2.  **signup.php** - User registration page. Initiates email verification.
+3.  **home.php** - Dashboard for authenticated users. Features Dark Mode toggle and conditional Admin Panel link.
+4.  **connect.php** - Database connection configuration.
+5.  **logout.php** - Handles user logout functionality.
+6.  **profile.php** - User profile page for updating username (email), password, and managing 2FA.
+7.  **forgot_password.php** - Form for users to request a password reset link.
+8.  **reset_password.php** - Page where users can set a new password using a token from email.
+9.  **verify_email.php** - Handles the email verification process via a token sent to the user.
+10. **admin_panel.php** - Page accessible by 'admin' role users to view a list of all registered users.
+11. **verify_2fa.php** - Page where users enter their 2FA code if it's enabled.
+12. **Setup Scripts (for development/initialization):**
+    *   `setup_password_reset.php`: Initializes `registration` and `password_resets` tables.
+    *   `setup_email_verification.php`: Adds email verification columns and `email_verifications` table.
+    *   `setup_rbac.php`: Adds the `role` column for RBAC.
+    *   `setup_2fa.php`: Adds columns for 2FA functionality.
+13. **Utility Scripts (for development/testing):**
+    *   `make_admin.php`: Script to manually promote a user to 'admin' role (requires protection in production).
+    *   *`check_table.php` - (Previously mentioned, but not used/created in recent tasks, consider removing if obsolete or creating if still needed).*
 
 ## Database Structure
-The application uses a MySQL database named 'signupforms' with a table called 'registration' that has the following structure:
-- id (INT, AUTO_INCREMENT, PRIMARY KEY)
-- username (VARCHAR)
-- password (VARCHAR)
+The application uses a MySQL database named 'signupforms' (configurable in `connect.php`).
+
+### `registration` Table:
+-   `id` (INT, AUTO_INCREMENT, PRIMARY KEY)
+-   `username` (VARCHAR(50), NOT NULL UNIQUE) - User's email address.
+-   `password` (VARCHAR(255), NOT NULL) - *Currently plain text; hashing is essential for production.*
+-   `is_verified` (TINYINT(1), DEFAULT 0) - `0` for not verified, `1` for verified (email).
+-   `role` (VARCHAR(50), DEFAULT 'user') - User's role (e.g., 'user', 'admin').
+-   `2fa_secret` (VARCHAR(255), NULLABLE, DEFAULT NULL) - Stores the shared secret for 2FA.
+-   `2fa_enabled` (TINYINT(1), DEFAULT 0) - `0` for 2FA disabled, `1` for 2FA enabled.
+
+### `password_resets` Table:
+-   `id` (INT, AUTO_INCREMENT, PRIMARY KEY)
+-   `email` (VARCHAR(255), NOT NULL) - User's email associated with the token.
+-   `token` (VARCHAR(255), NOT NULL UNIQUE) - Secure token for password reset.
+-   `expires` (BIGINT, NOT NULL) - Timestamp for token expiration.
+
+### `email_verifications` Table:
+-   `id` (INT, AUTO_INCREMENT, PRIMARY KEY)
+-   `user_id` (INT, NOT NULL, FOREIGN KEY REFERENCES `registration(id)` ON DELETE CASCADE) - ID of the user.
+-   `token` (VARCHAR(255), NOT NULL UNIQUE) - Secure token for email verification.
+-   `expires` (BIGINT, NOT NULL) - Timestamp for token expiration.
 
 ## Security Implementations
-- Prepared statements used to prevent SQL injection attacks
-- Session management for authentication
-- Protected routes that require login
-- Password handling (Note: In a production environment, passwords should be hashed using proper methods like password_hash())
+-   Prepared statements (mysqli) used to prevent SQL injection attacks.
+-   Session management for maintaining authenticated user state.
+-   Protected routes that require login (e.g., `home.php`, `profile.php`, `admin_panel.php`).
+-   **Email Verification**: Users must verify their email address via a token-based link sent upon registration before they can log in.
+-   **Password Reset via Email Token**: Secure mechanism for users to reset forgotten passwords.
+-   **Two-Factor Authentication (Conceptual)**: Framework for 2FA during login. Users can enable/disable it on their profile. The current validation is mock and needs a proper TOTP library for production.
+-   Input sanitization (e.g., `htmlspecialchars` for output, `trim` for input).
+-   Password Handling: *Currently plain text. Critical to implement `password_hash()` and `password_verify()` for secure password storage.*
 
 ## Features
 
-### User Authentication
-- Registration system with username uniqueness validation
-- Login system with session management
-- Protected routes requiring authentication
-- Logout functionality
+### User Authentication & Account Security
+-   **Registration**: New users sign up with an email (as username) and password.
+    -   Username/email uniqueness is validated.
+    -   Upon registration, an email verification token is generated and stored. A (mock) email is sent with a verification link (token displayed for testing).
+-   **Login**: Registered users log in with their email and password.
+    -   Login is blocked if the email is not verified.
+    *   If 2FA is enabled, after successful password validation, the user is redirected to enter a 2FA code.
+-   **Logout**: Terminates the user session.
+-   **Email Verification (`verify_email.php`)**:
+    -   Users click a link from their email (e.g., `verify_email.php?token=...`).
+    -   The system validates the token and its expiry.
+    -   If valid, the `is_verified` flag in the `registration` table is set to `1`, and the token is deleted.
+-   **Password Reset (`forgot_password.php`, `reset_password.php`)**:
+    -   Users enter their email in `forgot_password.php`.
+    -   If the email exists, a unique token is generated, stored in `password_resets`, and a (mock) email is sent with a reset link (token displayed for testing).
+    -   Users click the link (`reset_password.php?token=...`), validate the token and its expiry.
+    -   If valid, they can set a new password, which updates their entry in the `registration` table. The reset token is then deleted.
+-   **Two-Factor Authentication (2FA - Conceptual) (`profile.php`, `verify_2fa.php`)**:
+    -   Users can enable 2FA in their profile. A mock secret key is generated and displayed for them to add to an authenticator app. The secret is stored, and `2fa_enabled` is set.
+    -   Users can disable 2FA in their profile, which clears the secret and flag.
+    -   During login, if 2FA is enabled, the user is prompted on `verify_2fa.php` to enter a code from their app.
+    -   Current validation is mock (e.g., checks for "123456"). A proper TOTP library is needed for a secure, production-ready implementation.
 
-### UI/UX Design
-- Modern, responsive design using Bootstrap 5
-- Professional color scheme and typography
-- Interactive elements with hover effects
-- Card-based layout for main content areas
-- Font Awesome icons for enhanced visual appeal
-- Custom CSS animations for better user experience
+### User Profile Management (`profile.php`)
+-   Accessible only to logged-in users.
+-   Displays current username (email).
+-   Users can update their username (email), which also checks for uniqueness and updates the session.
+-   Users can update their password after verifying their current password.
+-   Users can manage their 2FA settings (enable/disable).
 
-### Dashboard
-- Sidebar navigation with collapsible functionality on mobile
-- Top navigation bar with user profile and notifications
-- Information cards displaying key metrics
-- Chart placeholder areas (would be implemented with a charting library in production)
-- Feature highlights with icon representations
-- Responsive design that adapts to all screen sizes
+### Role-Based Access Control (RBAC)
+-   Users have a `role` field (default 'user').
+-   **Admin Panel (`admin_panel.php`)**:
+    -   Accessible only by users with the 'admin' role (session-based check).
+    -   Displays a list of all registered users with their ID, username, role, and verification status.
+-   The link to the Admin Panel in the `home.php` sidebar is only visible to admin users.
+-   A utility script (`make_admin.php`) exists for developers to manually promote a user to 'admin'.
+
+### UI/UX Design & Dashboard (`home.php`)
+-   Modern, responsive design using Bootstrap 5.
+-   **Dark Mode Toggle**: The dashboard (`home.php`) features a toggle switch for dark mode.
+    -   The user's preference is saved in `localStorage` and applied on subsequent page loads.
+    -   CSS styles are defined for a consistent dark theme across dashboard elements (sidebar, topbar, cards, etc.).
+-   Professional color scheme and typography.
+-   Dashboard includes:
+    -   Collapsible sidebar navigation.
+    -   Topbar with user dropdown (links to Profile, Logout).
+    -   Placeholder information cards and chart areas.
 
 ## Installation Instructions
 
-1. Install XAMPP (or similar PHP development environment)
-2. Clone/download the project to the htdocs folder
-3. Start Apache and MySQL services
-4. Create a database named 'signupforms'
-5. Create a table named 'registration' with fields:
-   ```sql
-   CREATE TABLE registration (
-       id INT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-       username VARCHAR(50) NOT NULL UNIQUE,
-       password VARCHAR(255) NOT NULL
-   );
-   ```
-6. Access the project through your browser at: http://localhost/New_Lesson/
+1.  Install a PHP development environment (e.g., XAMPP, WAMP, MAMP, or a custom LEMP/LAMP stack). Ensure PHP 7.4+ and MySQL 5.7+ are available.
+2.  Clone/download the project to your web server's document root (e.g., `htdocs` in XAMPP).
+3.  Start Apache (or your web server) and MySQL services.
+4.  **Database Configuration:**
+    *   Create a MySQL database (e.g., `signupforms`).
+    *   Update the database connection parameters in `connect.php` (`$hostname`, `$username`, `$password`, `$database`).
+5.  **Database Initialization:**
+    *   Open a terminal or command prompt in the project's root directory.
+    *   Run the setup scripts sequentially using PHP CLI:
+        ```bash
+        php setup_password_reset.php
+        php setup_email_verification.php
+        php setup_rbac.php
+        php setup_2fa.php
+        ```
+    *   These scripts will create the necessary tables and columns. They are designed to be safe to run multiple times (idempotent).
+6.  Access the project through your browser (e.g., `http://localhost/your_project_folder_name/`).
+7.  **(Optional - For Testing RBAC)** To create an admin user:
+    *   Register a normal user through `signup.php` and verify their email.
+    *   Use the `make_admin.php` script by navigating to it in your browser with the correct parameters:
+        `http://localhost/your_project_folder_name/make_admin.php?token=YOUR_SECRET_TOKEN&username=registered_user_email@example.com`
+        (Replace `YOUR_SECRET_TOKEN` with the actual token from the script and provide the registered user's email).
+    *   The user will need to log out and log back in for the admin role to be active in their session.
 
 ## Future Enhancements
-- Implement proper password hashing
-- Add email verification for new registrations
-- Create a password reset functionality
-- Add profile management capabilities
-- Implement real data visualization with charts
-- Create user roles and permissions system
-- Add activity logging
-- Implement dark mode theme option
-- Add multi-language support
+-   **Implement Proper Password Hashing**: Critical security improvement using `password_hash()` and `password_verify()`.
+-   **Full TOTP 2FA Implementation**: Integrate a standard TOTP library (e.g., PHPGangsta_GoogleAuthenticator, RobThree/TwoFactorAuth) for QR code generation and secure code validation.
+-   **User Interface for Role Management**: Allow admins to assign/change user roles via the admin panel.
+-   **Activity Logging**: Implement a system for logging important user actions (logins, profile changes, etc.).
+-   **Enhanced Form Validation**: Add more comprehensive client-side and server-side validation rules.
+-   **CSRF Protection**: Implement CSRF tokens on all forms handling sensitive actions.
+-   **Refine UI/UX**: Further improve user experience, especially for error handling and success messages across all features.
+-   **Consolidate Setup Scripts**: Optionally, create a single master PHP script to run all database setup steps.
+-   **Code Cleanup & Refactoring**: Address any duplicate HTML/code (e.g., in `signup.php`, `home.php` due to tool limitations during development) and refactor for better maintainability.
+-   **Real Email Sending**: Replace mock email notifications with actual email sending functionality using a library like PHPMailer.
+-   **Session Security Enhancements**: Implement measures like session regeneration after login, timeout policies.
+-   **API for Mobile/SPA**: Consider adding a RESTful API for frontend frameworks or mobile apps.
+-   **More Granular Permissions for RBAC**: Expand RBAC beyond simple 'admin'/'user' roles.
 
 ## Code Design Principles
-- Separation of concerns (database connectivity, authentication, UI)
-- Clean, maintainable code structure
-- Reusable UI components
-- Mobile-first responsive design approach
-- Progressive enhancement for better user experience
-- Defensive programming with proper error handling
+-   Separation of concerns (database connectivity, authentication logic, UI presentation).
+-   Clean, maintainable code structure where possible.
+-   Use of prepared statements for database interactions.
+-   Basic responsiveness using Bootstrap.
 
 ## Maintenance and Support
-For any issues or support, please contact the project maintainer.
+For any issues or support, please contact the project maintainer or open an issue on the project repository.
 
 ---
 
-© 2025 AppName. All rights reserved.
+© <?php echo date("Y"); ?> SecurePortal. All rights reserved.
+(Note: PHP tag for date will not execute in plain .txt, replace with static year or remove if not desired in plain text)
+Replace `<?php echo date("Y"); ?>` with the current year, e.g., 2024, for the static .txt file.
